@@ -1,0 +1,501 @@
+---
+title: "Homelessness in NYC"
+author: "Elijah Hall and Dayana Delgado"
+date: "April 4, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r warning=FALSE, results='hide'}
+#Libraries
+if (!require(tidyverse)) install.packages("tidyverse")
+library(tidyverse)
+if (!require(lubridate)) install.packages("lubridate")
+library(lubridate)
+if (!require(data.table)) install.packages("data.table")
+library(data.table)
+if (!require(xts)) install.packages("xts")
+library(xts)
+if (!require(reshape2)) install.packages("reshape2")
+library(reshape2)
+if (!require(rmarkdown)) install.packages("rmarkdown")
+library(rmarkdown)
+
+```
+## *Part I*
+**Introduction**
+New York City (NYC) is one of the largest and most expensive cities to live in. These two factors naturally increase the likelihood of homelessness amongst the population. Media report on the trends of homeless usually throughout times of policy changes or the holiday seasons. They have repeatedly called the increase in homeless population a crisis and epidemic (Murphy, 2017). They quote point in time estimates that suggest almost a 20% growth rate.  
+
+**Problem Statement**
+Homelessness is said to be increasing, but the numbers constantly quoted in news and media are point in time comparisons based on the number of people in homeless shelters. There are numerous organizations that give conflicting estimates on the real homeless population and its growing rate calling it a crisis. To summarize, we want to know what is the homeless population and how has it been growing. Our research will help describe what the total population of homeless in and out of shelters is and how are they changing from year to year.
+
+**Data Collection**
+We collected observational data from four sources. (1) The Department of Homeless Services (DHS) publishes numerous data sets. We collected  daily count of homeless in shelters using the data set “DHS Daily Report”. There are 12  variable, but only 2 are of interest to answer our question, “Date of Census” and “Total Individuals in Shelter”. We keep the other variables to help us understand the total values in our analysis (NYC Open Data, 2017). (2) We also collected temperature data from the National Center for Environmental Information. Since some homeless sleep outside it is likely that most will transition to shelters when the temperature is coldest (Ncdc.noaa.gov, 2017). (3) Homeless Outreach Population Estimate (HOPE) conducts annual counts to estimate the homeless population on the streets. They usually do this near the beginning of the year. The counts are estimates from actual counts where they use statistical analysis to estimate the total street homeless. The data was aggregated into a .csv from their annual reports (NYC Homeless Outreach Population Estimate (HOPE), 2017). (4) We also collected NYC population data from the official website of New York State (State of New York, 2017).
+
+**Data processing**
+We imported the data into R to clean the data and merge them into two separate data frames. The first data frame is called “newdata” which merges the DHS observations and the temperature data since both are daily measurements. We removed duplicate data and outliers that were too extreme to be accurate counts. The second data frame is called “Yearlydata” and merges NYC population data and HOPE count data since they are annual measurements. We added a separate “Year” column as an index since the dates of measurements are not the same.
+
+**Methodology**
+For our analysis we identified the peaks of the homeless population in shelters and valleys of the temperature data. Since the homeless population peaks identified too many values we identified the nearest neighbor to the valleys of the temperature data. We took an average population of 15 days before and after the identified date to try to eliminate point in time estimation errors. The dates we found were not the same, but close. We calculated the average date to be February 4th. This is the average time that the temperature is the coldests and the homeless counts the highest in the shelters. For 2015 the data, February 3rd and 4th were removed due to either NA’s or being outliers. Therefore we used 2015-02-05 as the value for our estimations in 2015. We also did not have NYC population estimates for 2017 or 2018 so we used linear regression to estimate those values. We also didn’t have total homeless percent growth for 2014 since we didn’t have values for total homeless in shelters in 2013 or 2018. We used linear regression to estimate the missing values and were able to then produce a growth estimate for 2014 and 2018. The final calculations are to adjust for NYC population growth. We do this by subtracting the NYC population growth rate from the homeless population growth rate. Our final data frame is called “estimates” where we include our adjusted growth rates.
+
+
+###Data
+
+```{r echo=FALSE}
+path_data<- "C:/Users/usmc_/Documents/Data Frameworks and Models APAN 5200/Project Homelessness/DHS_Daily_Report.csv"
+path_Tempdata<- "C:/Users/usmc_/Documents/Data Frameworks and Models APAN 5200/Project Homelessness/DailyTempNYC.csv"
+path_Hope <-"C:/Users/usmc_/Documents/Data Frameworks and Models APAN 5200/Project Homelessness/HOPE Counts.csv"
+path_NYCpop <- "C:/Users/usmc_/Documents/Data Frameworks and Models APAN 5200/Project Homelessness/NYCpop.csv"
+
+```
+The "path_" objects are file paths or url links to the data
+```{r echo=FALSE}
+
+data <- read_csv(path_data)
+Tempdata <- read_csv(path_Tempdata)
+Hope <- read_csv(path_Hope)
+NYCpop <- read_csv(path_NYCpop)
+
+```
+We collected data from four sources that needed to be cleaned.
+
+####   1. DHS Daily Report dataset:
+
+1. About this Dataset:
+Provided by the Department of Homeless Services and available at the NYC Open Data webpage:
+https://data.cityofnewyork.us/Social-Services/DHS-Homeless-Shelter-Census/3pjg-ncn9/data
+Created on August 22, 2013 and Last updated on October 6th, 2017. 12 Columns and 1479 Rows
+
+2. Variables:
+  i. Date of Census
+  ii. Total Adults in Shelter: The number of single adults, individuals in adult families, and adults in families with children in shelter as of the date of census
+  iii. Total Children in Shelter: The number of children in families with children in shelter as of the date of census.
+  iv. Total Individuals in Shelter: The number of single adults, individuals in adult families, and adults and children in families with children in shelter as of the date of census
+  v. Single Adult Men in Shelter
+  vi.Single Adult Women in Shelter
+  vii. Total Single Adults in Shelter: The number of single adult men and women in shelter as of the date of census
+  viii. Families with children in shelter
+  ix. Adults in Families with Children in Shelter
+  x. Total Individuals in Families with Children in Shelter: The number of adults and children in families with children in shelter as of the date of census
+ xi. Adult Families in Shelter
+ xii. Individuals in Adult Families in Shelter
+
+####   2. Daily Temperature 
+
+1. About this Dataset:
+Provided by the National Center for Environmental Information
+Available at https://www.ncdc.noaa.gov/data-access/quick-links
+Dataset details the temperature by day. We will be merging the minimum temperature into our homeless population data table. 2 Columns and 18426 Rows
+
+2. Variables:
+  i. Date: The date of the temperature record
+  ii. TMIN: Minimum temperature registered for the day
+
+#### 	3. NYC Population Estimates
+
+1. About this Dataset:
+Provided by the Official Website of the New York State
+Available at https://data.ny.gov/Government-Finance/Annual-Population-Estimates-for-New-York-State-and/krt9-ym2k/data 
+3 Columns and 3276 Rows
+
+2. Variables:
+
+  i. Year: The year for which the population is calculated
+  ii. Population: number of residents
+  iii. Geography: geographic area name
+
+####   4. NYC Homeless Outreach Population Estimate (HOPE) counts
+
+1. About this Dataset:
+
+Provided by the NYC Department of Homeless Services
+Available at http://www1.nyc.gov/assets/dhs/downloads/pdf/hope-2017-results.pdf
+This point-in-time survey estimates the number of individuals living on city streets, parks, and in other public spaces throughout the five boroughs.
+Thousands of volunteers fanned out to complete the count. 4 Columns and 5 Rows
+
+2. Variables:
+
+  i. Date: Date the HOPE count as conducted
+  ii. Total Unsheltered Individuals:  homeless people sleeping in public places such as streets, parks, and subways on a single winter night
+  iii. Surface Areas: total homeless found in surface areas of all boroughs (Manhattan, Bronx, Brooklyn, Staten Island, Queens)
+  iv. Subways:  total homeless found in subways of all boroughs (Manhattan, Bronx, Brooklyn, Staten Island, Queens)
+
+### Cleaning homeless data, "data"
+```{r echo=FALSE, results='hide'}
+summary(data)
+glimpse(data)
+
+#remove duplicated data
+nonas.nodupdata<- data%>%
+  distinct("Date of Census")%>%
+  filter(complete.cases(.))
+
+colnames(nonas.nodupdata)[1] <-"Date"
+
+#Change Date format to YYYY-MM-DD
+nonas.nodupdata$Date <-mdy(nonas.nodupdata$Date)
+```
+
+I want to know how each variable changes over time, maybe certain categories are more influencial than others.
+
+```{r echo=FALSE} 
+#Visualize data trends in scatter plot
+df_melt = melt(nonas.nodupdata, id.vars = 'Date')
+ggplot(df_melt, aes(x = Date, y = value)) + 
+  geom_point() + 
+  facet_wrap(~ variable)
+#obvious outliers are in Single Adults (male and female)
+```
+There are obvious outliers in Single Adults male and female. I will remove those that obviously do not belong since there was little to no metat data it is difficult to understand why these are here. There are a few outliers that are reasonable to assume a possibility of actually seeing the reported numbers. Some reasonable considerations are the some facilities misreported numbers, certain facilities were added for a short time to the reporting system, or simple data misentry. So we removed the obviuos outliers
+
+```{r echo=FALSE}
+#identify outliers in data and remove them
+outliers1 <- which(nonas.nodupdata$Date < "2015-01-01" & nonas.nodupdata[,4] > 60000)
+outliers2 <- which(nonas.nodupdata$Date < "2014-01-01" & nonas.nodupdata[,4] > 55000)
+outliers3 <- which(nonas.nodupdata$Date < "2015-06-01" & nonas.nodupdata[,4] < 48000)
+
+total_outliers <- c(outliers1,outliers2,outliers3)
+total_outliers <- total_outliers[!duplicated(total_outliers)]
+
+nonas.nodupdata <- nonas.nodupdata[-total_outliers,]
+
+df_melt = melt(nonas.nodupdata, id.vars = 'Date')
+ggplot(df_melt, aes(x = Date, y = value)) + 
+  geom_point() + 
+  facet_wrap(~ variable)
+```
+Some groups of homeless are growing faster than others and contributing more to the problem than others. The numbers seen could also be a influenced by priority of service since families might be given services faster or more frequently on average, especially if children are present. 
+
+```{r}
+#look at variance by category
+vars<- sort(apply(nonas.nodupdata[,-1], 2, sd), decreasing = T)
+pr.vars<- vars^2/vars[1]^2
+pr.vars
+```
+As you can see about 80% of variance is from Adults and a large portion is from Single Men. This would seem to point to two potential concerns. This group is either more prone to homelessness or priroity of service is not being given equaly as mentioned before.
+```{r echo=FALSE}
+#create vector with row numbers corresponding to the beginning of each year
+New_Year <- which(nonas.nodupdata$Date == "2014-01-01" |
+                    nonas.nodupdata$Date == "2015-01-01"|
+                    nonas.nodupdata$Date == "2016-01-01"|
+                    nonas.nodupdata$Date == "2017-01-01")
+
+#plot the total individuals with lines separating years
+mytheme <- theme_bw()+
+  theme(panel.border = element_blank(),
+        axis.line = element_line(color = 'black'),
+        plot.background = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.position="none")
+    
+ggplot(nonas.nodupdata, aes(x=Date, y=`Total Individuals in Shelter`)) +
+  geom_point()+
+  mytheme+
+  labs(title ="",x="",y="")+
+  geom_point(aes(x=Date, y=(`Single Adult Men in Shelter`+ 43000), col="blue"))+
+  annotate("text", label = c("- 7000", "- 9500","- 12000","- 14500", "- 17000", "Single Adult Men"), 
+           x = c(rep(as.Date("2018-01-01"),5),as.Date("2017-09-01") ), 
+           y = c(50000,52500,55000,57500,60000, 54000), size = 4, colour = "red")+
+  annotate("text", label = "Total Individuals in Shelter", x=as.Date("2017-08-01"), 
+           y=61500, size=4, colour="black") 
+```
+The graph also shows that the total change in Single Adult Men accounts for about 25% of total growth in homeless.
+```{r echo=FALSE, results='hide'}
+#inspect data
+summary(Tempdata)
+glimpse(Tempdata)
+
+#Reduce data to NY observations
+Tempdata <- Tempdata%>%
+  select(3:6)%>%
+  filter(Tempdata$STATION == 'USW00014732')
+colnames(Tempdata)[1] <-"Date"
+
+newdata <- merge(nonas.nodupdata, Tempdata, by = 'Date')
+
+```
+
+```{r echo=FALSE, warning=FALSE}
+
+#View temperature data
+ggplot(newdata, mapping = aes(x=Date, y=newdata$TMIN))+
+  geom_point() +
+  geom_smooth()+
+  mytheme+ 
+  labs(title ="",x="",y="Coldest Temp")
+
+#looking at the stable portion of the data we see a relavent negative correlation
+t_new <- newdata%>%
+  filter(Date > as.Date("2014-06-01"))
+```
+There are obvious cycles as we would expect with seasonal changes. If we look at the stable portion of the data we see a meaningful negative correlation of `cor(t_new$`Total Individuals in Shelter`, t_new$TMIN)`. The pattern is enough to suggest a peak demand for homeless shelter to be in the winter. This is not new information. However, it gives reason to use these time periods to predict and analyze point to point growth as it is likely the best and most accurate count of homeless within NYC. 
+
+The HOPE counts are conducted in late January and early February witch appear to be the local minimums of the temperature graph. Their reasoning is likely based on the same intuition that if it is dangerously cold outside, then the homeless will seek shleter. 
+
+### Cleaning NYC population data "NYCpop"
+
+```{r echo=FALSE, results='hide'}
+#inspect data
+summary(NYCpop)
+glimpse(NYCpop)
+
+#Remove other observations outside NYC
+FIPS_Code_NYC <-c("36005","36061", "36047","36081", "36085")
+NYC_index<- unlist(lapply(FIPS_Code_NYC, function (x){
+  which(NYCpop$`FIPS Code` == x & NYCpop$Year > 2011)
+}))
+newNYCpop <- data.frame(NYCpop[NYC_index,])
+#Remove column 4 since it has no use
+newNYCpop <- newNYCpop[,-4]
+
+#create growth table with total population by year (2017 not available)
+Years <- c(unique(newNYCpop$Year))
+NYCtotal.pop <- newNYCpop%>%
+  group_by(Year)%>%
+  summarize(Total=sum(Population))
+
+#Approximate 2017 value
+approx2017 <- lm(Total ~ Year, data=NYCtotal.pop)
+new.df <- data.frame(Year=c(2017))
+estimate2017 <- predict(approx2017, new.df)
+
+#combine NYC population data frames
+NYCtotal.pop <- rbind(NYCtotal.pop, c(2017,estimate2017))
+str(NYCtotal.pop)
+
+perc.growth <- c(NA)
+for (i in 2:6) {
+  new <-NYCtotal.pop$Total[i]
+  old <- NYCtotal.pop$Total[i-1]
+  perc.growth[i] <- (new-old)/old
+}
+NYCtotal.pop$perc.growth <- perc.growth
+```
+### Cleaning HOPE count data "Hope"
+
+```{r echo=FALSE, results='hide'}
+#view data
+glimpse(Hope)
+Years2 <- as.numeric(c("2013", "2014", "2015", "2016", "2017"))
+Hope$Years <- Years2
+
+Yearlydata <- left_join(Hope, NYCtotal.pop, by= c("Years"= "Year"))
+
+#Rename Variables so not to confuse future analysis
+setnames(Yearlydata, old = c("Years", "Date", "Surface", "Subways", "Total Unsheltered", "Total", "perc.growth"), 
+         new = c("Years", "Date.Hope.Count", "Surface.Hope.Count", "Subways.Hope.Count", "Total.Unsheltered.Hope.Count",
+                 "Total.NYC.pop", "NYC.pop.perc.growth"))
+summary(Yearlydata)
+
+#save tables for project submission
+write.csv(newdata, file = "newdata.csv")
+write.csv(Yearlydata, "Yearlydata.csv")
+```
+
+The two tables are created as a result of the cleaning, "newdata" and "Yearlydata". "newdata" is for daily count data that will be used for estimating capacity needs of DHS shelters and evaluating at what time periods max capacity tend to be reached. "Yearlydata" reports point to point estimates fo populations and will be used to help give estimates of future population growth
+
+```{r}
+View(Yearlydata)
+```
+## *Part II*
+Next lets visualize the suspected pattern of temperature and population fluctuation in DHS shelters. This is helpfull in matching population growth with peak seasonal needs for available beds.
+
+```{r echo=FALSE, results='hide'}
+#Calculate peak dates
+
+#create function for identifying peaks and valleys ("inflect" function from StackOverflow)
+inflect <- function(x, threshold = 1){
+  up   <- sapply(1:threshold, function(n) c(x[-(seq(n))], rep(NA, n)))
+  down <-  sapply(-1:-threshold, function(n) c(rep(NA,abs(n)), x[-seq(length(x), length(x) - abs(n) + 1)]))
+  a    <- cbind(x,up,down)
+  list(minima = which(apply(a, 1, min) == a[,1]), maxima = which(apply(a, 1, max) == a[,1]))
+}
+
+#Find peaks and valleys using inflect() on temperature data
+temp_val <- inflect(newdata$TMIN, threshold = 50)
+
+#Select only valley's from temp_val
+min <- unlist(temp_val[1])
+#min[2] is a local minimum, min[5] is equal to min[6] giving two valley measurements for the same year
+
+#Find the middle of the two points and assign that to min[5]
+min[5] <- (as.numeric(min[5]) + as.numeric(min[6]))/2
+
+#remove min[6] as it's not needed anymore
+min <- min[-c(2,6)]
+
+# Find average date to make yearly estimates comparable
+# for minimum temperature use dates from min and set year to same year(2014)
+newdata$Date[min] #"2014-01-07" "2015-02-20" "2016-02-14" "2017-02-08"
+Date2 <- as.Date( c("2014-01-07", "2014-02-20", "2014-02-14", "2014-02-08"))
+mean(Date2) #February 4th is the average date
+
+#replace min values with row numbers of average dates by year (No data for 2015-02-04, use 2015-02-05 ) 
+min_avg <- which(newdata$Date == "2014-02-04" |
+                   newdata$Date == "2015-02-05"| 
+                   newdata$Date == "2016-02-04"|
+                   newdata$Date == "2017-02-04")
+min_avg_dates <- as.Date(c("2014-02-04", "2015-02-05", "2016-02-04", "2017-02-04"))
+
+#create vector of rows for peaks in homeless population 
+pop_pk <-inflect(newdata[,4], threshold = 30)
+pop_pk <- unlist(pop_pk[2])  
+
+nearest<-c()
+for(i in 1:4){
+nearest[i] <- pop_pk[which(abs(min_avg[i]-pop_pk) == min(abs(min_avg[i]-pop_pk)))]
+}
+
+#( 78,  489,  955, 1204) - Nearest to values in "min"
+pop_pk <- nearest
+
+
+```
+
+The points of highest demand closest to the coldest time of year are `newdata$Date[min_avg]`.
+```{r}
+#see how avg dates match smoothed valleys
+ggplot(newdata, mapping = aes(x=Date, y=newdata$TMIN))+
+  geom_point() +
+  geom_smooth()+
+  geom_vline(xintercept = newdata$Date[min_avg], linetype=4, color = "red")+
+  mytheme+ 
+  labs(title ="",x="",y="Coldest Temp")
+```
+The average dates appear to match relatively well with the local minimums. Next lets look at how the peaks of homeless demand match with these dates. Additionaly I don't want to just take the reported count on the specific day due to high variance. Instead I want to take an average over a 30 day window, +/- 15 days.
+
+```{r echo=FALSE, results='hide'}
+
+#find the mean of the homeless population for 15days before and after the min_avg$Date
+mean_peaks <- c()
+for(i in 1:length(min)) {
+  mean_peaks[i] <- mean(newdata$'Total Individuals in Shelter'[(min_avg[i]-15):(min_avg[i]+15)])
+}
+
+#create peaks data frame to visualize peaks as a layer on population and temperature data
+Years_estimates <- c("2014", "2015", "2016", "2017")
+peaks <- data.frame(newdata$Date[min_avg], mean_peaks, Years_estimates)
+names(peaks)<- c("Date", "mean_peaks", "Year")
+
+```
+
+
+```{r}
+#show the mean homeless data on the daily pop data as an overlay
+ggplot(newdata, mapping =aes(x=Date, y=`Total Individuals in Shelter`)) +
+  geom_point() +
+  geom_point(peaks, mapping =aes(x=Date, y=mean_peaks, color= "red")) +
+  mytheme+
+  geom_vline(xintercept = newdata$Date[min_avg], linetype=4, color = "red") + #minimum temperature
+  geom_vline(xintercept = newdata$Date[pop_pk], linetype=4, color = "blue")#peaks of homeless population
+
+```
+
+```{r}
+#Show the valley points on temperature data
+temp_min <- newdata[min_avg,]
+
+ggplot(newdata, mapping= aes( x= Date, y= TMIN))+
+  geom_point()+
+  geom_point(temp_min, mapping=aes(x=Date,y=TMIN, color="red"))+
+  mytheme+
+  geom_vline(xintercept = newdata$Date[min_avg], linetype=4, color = "red")+
+  geom_vline(xintercept = newdata$Date[pop_pk], linetype=4, color = "blue")
+```
+We can see that the dates for demand peaks match very well with tempurature valleys with the exception of 2014. 2014 is in an unusual growth period with some outliers pulling it to the right.
+
+```{r echo=FALSE, results='hide'}
+#create vectors to hold unsheltered and sheltered estimates
+unsheltered_estimates <- as.numeric(unlist(c(Yearlydata[2:5,4])))
+sheltered_estimates <- peaks[,"mean_peaks"]
+
+#calculate total homeless population estimate 
+Total_Homeless <-  unsheltered_estimates + sheltered_estimates
+
+#create estimates table
+estimates <- data.frame(Years_estimates, unsheltered_estimates,sheltered_estimates, 
+                        Total_Homeless)
+
+#estimate 2013 percent growth with linear model
+estimates$Years_estimates <- as.numeric(as.character(estimates$Years_estimates))
+shelter_model <- lm(Total_Homeless ~ Years_estimates, data = estimates)
+new.df <- data.frame(Years_estimates=c(2013))
+shelter_estimate2013 <- predict(shelter_model, new.df)
+
+#calculate percent growth of Total Homeless
+homeless_perc_growth <- c()
+for (i in 1:4) {
+  homeless_perc_growth[i] <- 100*((Total_Homeless[i]/Total_Homeless[i-1])-1)
+}
+homeless_perc_growth[1] <- 100*((Total_Homeless[1]/shelter_estimate2013)-1)
+
+#add to estimates data table
+estimates$homeless_perc_growth <- homeless_perc_growth
+estimates$NY_perc_growth <- as.numeric(t(Yearlydata[2:5,7]*100)) #NYC_perc_growth is still in decimal form
+
+#estimating 2018 homeless population and growth
+m<- lm(homeless_perc_growth ~ Years_estimates, data=estimates)
+m_coef_lm <- unlist(m[[1]])
+pop_estimate2018 <-exp(m_coef_lm[1] + m_coef_lm[2]*log(2018))
+homeless_perc_growth_2018 <- 100*(pop_estimate2018- Total_Homeless[4])/Total_Homeless[4]
+
+#Approximate 2018 NYC total population value and growth
+names(Yearlydata)
+approx2018 <- lm(Total.NYC.pop ~ Years, data=Yearlydata)
+new.df <- data.frame(Years=c(2018))
+NYC_pop_estimate2018 <- predict(approx2018, new.df)
+
+NYC_perc_growth2018 <- 100*((NYC_pop_estimate2018/Yearlydata$Total.NYC.pop[5])-1)
+values_2018 <- c(2018, NA, NA,pop_estimate2018,homeless_perc_growth_2018,NYC_perc_growth2018)
+df2018 <- values_2018%>%
+  matrix()%>%
+  t()%>%
+  as.data.frame()
+names(df2018) <- names(estimates)
+estimates <- rbind(estimates, df2018)
+
+#adjust for NY Population growth. 
+adjusted_growth <- c()
+for (i in 1:5){
+  adjusted_growth[i] <- estimates$homeless_perc_growth[i] - estimates$NY_perc_growth[i]
+}
+estimates$adjusted_growth <- adjusted_growth
+```
+After cleaning I used the point to point estimates of growth to project 2018 populations and growth.
+```{r}
+estimates
+```
+```{r warning=FALSE}
+#Visualize adjusted growth rates by year
+ggplot(estimates, mapping = aes(x=Years_estimates, adjusted_growth))+
+  geom_rect(data=NULL,aes(xmin=2017,xmax=Inf,ymin=-Inf,ymax=Inf),
+            fill="grey")+
+  geom_rect(data=NULL,aes(xmin=-Inf,xmax=2017,ymin=-Inf,ymax=Inf),
+            fill="white")+
+  geom_smooth()+
+  annotate("text", label = c("Forcasted", "67,238 Homeless"), x = c(2017.5, 2017.8), y = c(9, 2.5), size = c(6, 4), colour = "blue")+  labs(title ="Growth Rate of Homeless Population",
+      x = "",
+       y = "Rate")
+```
+
+The forcasted growth rate is relatively naive as it doesn't consider political issues such as policy changes or election influences that might impact DHS.
+```{r}
+write.csv(estimates, file = "estimates.csv")
+```
+## Conclusion
+
+**Results**
+The total homeless population is increasing, but at a fluctuating rate that is difficult to predict. It appears that 2013 and 2014 may have been the years where the population grew in "crisis like" rates that levels off after 2015. The total population of homeless is a summation of street homeless and those in shelters. If capacity is always assumed to be at 100%, then we can also say that capacity fluctuates with the homeless population. The cost of emergency homeless shelters  is higher than regular contracts. Therefore, if DHS can accurately plan for increased capacity, then they can reduce costs and use taxpayer money more responsibly. Growth rates appear to be stabilizing in recent years and NYC should plan to serve an estimated 67,238 homeless individuals this february.
+
+One consideration to that needs more data to evaluate is that policy changes lead to the high growth rates seen before 2015. The data is just not available to be able to test that hypothesis. The analysis done here is recommended as a framework to track the homeless population annually as well as a way to test future policy changes. Knowing trends before and after policy implementation can help determine causal effects of policy and guide more effective political strategies to handle the growing problem that is homelessness in NYC
+
+**Limitations**
+Our data spans 5 years, but since we are using annual estimates the total number of observations is 5 with 3 being supported by earlier estimations using linear modeling in at least one of the values used to calculate the adjusted growth rate. The total population of homeless is a number that is difficult to quantify accurately and relies on questionable data and collection techniques. Data was only available for the end of 2013 to September 2017. To have better more accurate results we need data from at least 2008. Our results only represent the trends in the data we analysed and should not be used to definitively describe the homeless population. The best statement we can make is that the population is at least as big as we observed. 
+
+Since data was not collected on homeless population giving unique identifiers it is impossible to determine when people are entering or exiting the homeless shelter system. This would give a better visual on the dynamic nature of the problem. It is also possible that past policies gave aid to homeless and transitioned them into permanent housing which would remove them from the Daily Counts in the shelters only to have them re enter at a later date. If this happened in 2013 and 2014, it might explain the high growth rate. [The Coalition for the Homeless](http://www.coalitionforthehomeless.org/basic-facts-about-homelessness-new-york-city/) count “more than 129,803 different homeless” individuals in fiscal year 2017, although meta data is limited to their data. Although this gives evidence to the fact that there are a large number of people each year moving through the system and just because the proportion seen each day is rising at an alarming rate  doesn’t mean the total population is. This difference could be explained through policy changes or migration habits. Either way the data to answer more specific questions on about the homeless population is not easily found if it is available.
+
+This project was completed for the Data Frameworks and Method course (APAN5200) in the [MS Applied Analytics](http://sps.columbia.edu/applied-analytics/master-of-science-in-applied-analytics) program at Columbia University on December 8, 2018 and edited on April 4, 2018.
